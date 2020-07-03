@@ -102,6 +102,10 @@ y = est_dia[5:]
 y = list(map(str, y))
 
 
+# *************************** APLICAÇÃO DA WISARD ***************************
+
+
+
 '''
 # Filtra as regiões por datas
 s = pd.Series(reg[100:],name='regiao',index=df2.index)
