@@ -24,6 +24,9 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 
 # **************************** FUNÇÕES AUXILIARES ****************************
 
+# ---------------------------------------------------------------------------
+# Funções de pré-tratamento
+
 # Formata o dataframe para o formato da biblioteca pandas_ta
 def dfFormatoPandasTa(df):
     df.index.rename('date', inplace=True)
@@ -36,7 +39,11 @@ def dfFormatoPandasTa(df):
     inplace=True)
     return df
 
-# Computa a estratégia "diamante"
+
+# ---------------------------------------------------------------------------
+# Funções de indicadores
+
+# Computa o indicador "diamante"
 # Entradas:
 #   c: preço de fechamento
 #   smas: média móvel aritmética de curta duração

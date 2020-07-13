@@ -26,6 +26,9 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 
 # **************************** FUNÇÕES AUXILIARES ****************************
 
+# ---------------------------------------------------------------------------
+# Funções de pré-tratamento
+
 # Formata o dataframe para o formato da biblioteca pandas_ta
 def dfFormatoPandasTa(df):
     df.index.rename('date', inplace=True)
@@ -37,7 +40,10 @@ def dfFormatoPandasTa(df):
              'Volume Financeiro': 'volume'},
     inplace=True)
 
-# Computa a estratégia "diamante"
+# ---------------------------------------------------------------------------
+# Funções de indicadores
+
+# Indicador diamante"
 # Entradas:
 #   c: preço de fechamento
 #   smas: média móvel aritmética de curta duração
@@ -63,6 +69,7 @@ def estrategiaDiamante(c, smas, smal):
             reg = np.NaN # erro
     return reg
 
+# Volume de negociações crescente
 def volumeCrescente(s_vol):
     vol = s_vol.to_numpy()
     vol_cres = []
@@ -76,7 +83,7 @@ def volumeCrescente(s_vol):
             vol_cres.append(np.nan)
     return pd.Series(vol_cres, s_vol.index)
 
-
+# Volume de negociações decrescente
 def volumeDecrescente(s_vol):
     vol = s_vol.to_numpy()
     vol_decres = []
@@ -90,6 +97,7 @@ def volumeDecrescente(s_vol):
             vol_decres.append(np.nan)
     return pd.Series(vol_decres, s_vol.index)
 
+# Tendência de alta com base no preço de fechamento
 def tendenciaAlta(s_close):
     close = s_close.to_numpy()
     tend = []
@@ -103,6 +111,7 @@ def tendenciaAlta(s_close):
             tend.append(np.nan)
     return pd.Series(tend, s_close.index)
 
+# Tendência de baixa com base no preço de fechamento
 def tendenciaBaixa(s_close):
     close = s_close.to_numpy()
     tend = []
@@ -115,6 +124,43 @@ def tendenciaBaixa(s_close):
         else:
             tend.append(np.nan)
     return pd.Series(tend, s_close.index)
+
+
+# Cruzamento de médias indicando compra
+def xMediasCompra(smas, smal):
+    return 0
+
+# Cruzamento de médias indicando venda
+def xMediasVenda(smas, smal):
+    return 0
+
+# Indicador de tendência de alta por médias móveis
+def tendenciaMediaAlta(smas, smal):
+    return 0
+
+# Peço acima da banda de Bollinger superior
+def bollingerSup(c):
+    return 0
+
+# preço abaixo da banda de Bollinger inferior
+def bollingerInf(c):
+    return 0
+
+def rsiSobrecompra(c):
+    return 0
+
+def rsiSobrevenda(c):
+    return 0
+    
+# Canal Donchian
+def donchian(c):
+    return 0
+
+# Canal Keltner
+
+# Movimento direcional
+
+# Aaron
 
 # *****************************  PARÂMETROS  ********************************
 # Número de experimentos
@@ -259,15 +305,30 @@ tendBaixa = tendenciaBaixa(df0['close'])
 df1['tend_alta'] = tendAlta
 df1['tend_baixa'] = tendBaixa
 
-# Canal Donchian
-
-# Canal Keltner
-
-# Parabólico SAR
+# Donchian Channel
+dc_llen = 20
+dc_ulen = 20
+df_dc = ta.donchian(df0.close, uper_lenght=dc_ulen, lower_length=dc_llen)
+dc_low = df_dc.iloc[:,0]
+dc_upp = df_dc.iloc[:,2]
+dc_ul = ta.above(df0.close, dc_upp)
+dc_ll = ta.below(df0.close, dc_low)
+df1['dc_ul'] = dc_ul
+df1['dc_ll'] = dc_ll
+    
+# Keltner Channel
+kc_len = 20
+df_kc = ta.kc(df0.high, df0.low, df0.close, kc_len)
+kc_low = df_kc.iloc[:,0]
+kc_upp = df_kc.iloc[:,2]
+kc_ul = ta.above(df0.close, kc_upp)
+kc_ll = ta.below(df0.close, kc_low)
+df1['kc_ul'] = kc_ul
+df1['kc_ll'] = kc_ll
 
 # Movimento direcional
 
-# True Range
+# Aaron
 
 
 
