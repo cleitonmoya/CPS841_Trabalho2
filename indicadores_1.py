@@ -269,6 +269,9 @@ df0['macd_sign'] = df_macd.iloc[:,2]
 macd_buy = ta.cross(df0['macd_sign'], df0['macd_macd'], above=True)
 macd_sell = ta.cross(df0['macd_sign'], df0['macd_macd'], above=False)
 macd_alta = mm_alta = ta.above(df0.macd_sign, df0.macd_macd)
+
+macd_buy.iloc[:macd_slow_per] = np.nan
+macd_sell.iloc[:macd_slow_per] = np.nan
 macd_alta.iloc[:macd_slow_per] = np.nan
  
 df1['macd_buy'] = macd_buy
@@ -305,6 +308,9 @@ tendBaixa = tendenciaBaixa(df0['close'])
 df1['tend_alta'] = tendAlta
 df1['tend_baixa'] = tendBaixa
 
+
+## Volatilit Bands
+
 # Donchian Channel
 dc_llen = 20
 dc_ulen = 20
@@ -313,6 +319,10 @@ dc_low = df_dc.iloc[:,0]
 dc_upp = df_dc.iloc[:,2]
 dc_ul = ta.above(df0.close, dc_upp)
 dc_ll = ta.below(df0.close, dc_low)
+
+dc_ul.iloc[:max([dc_llen, dc_ulen])] = np.nan
+dc_ll.iloc[:max([dc_llen, dc_ulen])] = np.nan
+
 df1['dc_ul'] = dc_ul
 df1['dc_ll'] = dc_ll
     
@@ -323,32 +333,96 @@ kc_low = df_kc.iloc[:,0]
 kc_upp = df_kc.iloc[:,2]
 kc_ul = ta.above(df0.close, kc_upp)
 kc_ll = ta.below(df0.close, kc_low)
+
+kc_ul.iloc[:kc_len] = np.nan
+kc_ll.iloc[:kc_len] = np.nan
+
 df1['kc_ul'] = kc_ul
 df1['kc_ll'] = kc_ll
 
-# Movimento direcional
+## Trend indicators
 
-# Aaron
+# ADX (Average Directional Movement Index)
+adx_len = 14
+adx_ul = 25
+df_adx = df0.ta.adx(length=adx_len)
+adx, dmp, dmm = df_adx.iloc[:,0], df_adx.iloc[:,1], df_adx.iloc[:,2]
+adx_force = ta.above_value(adx,adx_ul)
+df1['adx_force'] = adx_force
+adx_buy = ta.cross(dmm, dmp, above=True)
+adx_sell = ta.cross(dmm, dmp, above=False)
+adx_upw = ta.above(dmp, dmm)
+
+adx_buy.iloc[:,adx_len] = np.nan
+adx_sell.iloc[:,adx_len] = np.nan
+adx_upw.iloc[:,adx_len] = np.nan
+
+df1['adx_buy'] =  adx_buy 
+df1['adx_sell'] = adx_sell
+df1['adx_upw'] = adx_upw
+
+# Aroon
+aroon_per = 14 # aroon period
+aroon_sl = 70 # strenght limit
+aroon_wl = 50 # weakness limit
+df_aroon = ta.aroon(df0.high, df0.low, aroon_per)
+aroon_u, aroon_d = df_aroon.iloc[:,0], df_aroon.iloc[:,1]
+
+aroon_usl = ta.above_value(aroon_u, aroon_sl) # strenght in aroon up
+aroon_dsl = ta.above_value(aroon_d, aroon_sl) # strenght in aroon down
+aroon_uwl = ta.below_value(aroon_u, aroon_wl) # weakness in aroon up
+aroon_dwl = ta.below_value(aroon_d, aroon_wl) # weakness in aroon down
+
+aroon_usl.iloc[:aroon_per] = np.nan
+aroon_dsl.iloc[:aroon_per] = np.nan
+aroon_uwl.iloc[:aroon_per] = np.nan
+aroon_dwl.iloc[:aroon_per] = np.nan
+
+df1['aroon_usl'] = aroon_usl
+df1['aroon_dsl'] = aroon_dsl
+df1['aroon_uwl'] = aroon_uwl
+df1['aroon_dwl'] = aroon_dsl
 
 
+## Volume
 
-# 1.2.2 Momentum
+# Money Flow Index
+mfi_per = 14
+mfi_ul = 80
+mfi_ll = 20
+mfi = df0.ta.mfi(length=mfi_per)
 
 
+mfi_buy = ta.above_value(mfi, mfi_ul)
+mfi_sell = ta.below_value(mfi, mfi_ll)
 
-# 1.2.3 Bandas
+df1['mfi_buy'] = mfi_buy
+df1['mfi_sell'] = mfi_sell
 
-
-'''
-# Geração dos rótulos conforme a estratégia "diamante"
-y = []
-for row in df0.itertuples():
-    y.append(estrategiaDiamante(row.close, row.smas, row.smal))
+# Geração dos rótulos
+f_per = 5 # forecasting period
+r_min = 0.03 # minimum return
+c = df0.close.tolist()
+Y = []
+for k, val in enumerate(c):
+    if k<len(c)-f_per:
+        if c[k+f_per]/val -1 >= r_min:
+            y = 1
+        elif c[k+f_per]/val-1 <= -r_min:
+            y = -1
+        else:
+            y = 0
+        Y.append(y)
+    else:
+        Y.append(np.nan)
+        
     
 # Adiciona a nova coluna ao dataframe
 df0['y'] = y
 y = y[n_per_ad-grau_serie:]
 
+
+'''
 #
 # 1.3 Construção da retina e do novo data-set com entradas binarizadas
 #
