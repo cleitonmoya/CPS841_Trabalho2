@@ -91,12 +91,14 @@ dataFinal = '2015-06-30'
 
 # Estratégia "diamante"
 p_sm = 50            # número de períodos da média curta
-p_lm = 200           # número de períodos da média longa
+p_lm = 100           # número de períodos da média longa
 n_classes = 6        # número de classes da esratégia diamante
 
 # Retina
+retinaMin= True
 grau_serie = 5       # Número de periodos passados
 n_per_ad = p_lm-1+grau_serie
+
 
 # Parâmetros da WiSARD
 addressSize = 5                 # número de bits de enderaçamento das RAMs
@@ -159,27 +161,32 @@ y = y[n_per_ad-grau_serie:]
 # região 2 = [0, 1, 0, 0, 0, 0]
 # Xn = [região n-1 | região n-2 | ... | região n-5]
 
-
-Reg = [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 0, 1]]
-#Reg =  np.identity(n_classes, dtype=int).tolist()
+if retinaMin:
+    Reg = [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 0, 1]]
+else:
+    Reg =  np.identity(n_classes, dtype=int).tolist()
 
 # Gera o conjunto de dados de entrada em formato de listas
 X = []
+
 '''
 for idx, val in enumerate(y[grau_serie:]):
     x =[]
     for k in range(grau_serie):
         x.extend(Reg[y[idx-k-1]])
-    X.append(x)
+    X1.append(x)
 '''
+
 for idx, val in enumerate(y):
     if idx >= grau_serie:
         x =[]
         for k in range(grau_serie):
             x.extend(Reg[y[idx-k-1]])
         X.append(x)
-    
-    
+    else:
+        X.append(np.nan)
+X = X[grau_serie:]
+
 # Cria um novo dataset iniciando a partir da primeira linha com dado
 # disponíel para a média longa
 df = df0.iloc[n_per_ad:].copy()
@@ -297,9 +304,9 @@ s3=pd.Series([s2],index=[s1.last_valid_index()])
 s = s.append(s3)
 
 plt.subplot(2,1,1)
-D_te.close.plot(linewidth=1, color='black', legend='Fech.')
-D_te.smal.plot(linewidth=2, color='blue', legend='SMA 50')
-D_te.smas.plot(linewidth=1, color='blue', legend='SMA 100')
+D_te.close.plot(linewidth=1, color='black')
+D_te.smal.plot(linewidth=2, color='blue')
+D_te.smas.plot(linewidth=1, color='blue')
 plt.title('Real (Y)')
 plt.xticks([])
 plt.xlabel('')
