@@ -165,12 +165,21 @@ Reg = [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 0, 1]]
 
 # Gera o conjunto de dados de entrada em formato de listas
 X = []
+'''
 for idx, val in enumerate(y[grau_serie:]):
     x =[]
     for k in range(grau_serie):
         x.extend(Reg[y[idx-k-1]])
     X.append(x)
-
+'''
+for idx, val in enumerate(y):
+    if idx >= grau_serie:
+        x =[]
+        for k in range(grau_serie):
+            x.extend(Reg[y[idx-k-1]])
+        X.append(x)
+    
+    
 # Cria um novo dataset iniciando a partir da primeira linha com dado
 # disponíel para a média longa
 df = df0.iloc[n_per_ad:].copy()
