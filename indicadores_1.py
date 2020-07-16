@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Universidade Federal do Rio de Janeiro
-Porgrama de Pos-Graduação em Engenharia de Sistemas e Computação
-CPS841 - Redes Neurais Sem Peso
+Federal Uniersity of Rio de Janeiro
+Computer Science and Systems Engineering Program (PESC/COPPE)
+CPS841 - Weigthless Neural Networks
+Prof. Priscila Machado Vieira Lima
 
-Teste da WiSARD para predição de tendências de ações com a estratégia 
-"diamante, conforme o artigo "Análise de Séries Temporais Financeiras 
-Utilizando WiSARD"
-
-Gera o dataset e rotula os dados com base nos diversos indicadores técnicos
+Forecasting stock price trends with WiSARD
 
 @author: Cleiton Moya de Almeida
 """
@@ -17,60 +14,180 @@ import numpy as np
 import pandas as pd
 import pandas_ta as ta
 import time
-import datetime
 import wisardpkg as wp
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix
 
+# ***************************** 0. PARAMETERS ********************************
 
-# **************************** FUNÇÕES AUXILIARES ****************************
+# General parameters
+N = 10                         # number of experiments
+onlineTraining = True           # online traiing
 
-# ---------------------------------------------------------------------------
-# Funções de pré-tratamento
+# Data set loading
+test_size = 0.3                 # lenght of est datasize
+date_initial = '2017-01-01'      
+date_last = '2020-01-01'
+adj_price = True                # close price adjusted for dividends
 
-# Formata o dataframe para o formato da biblioteca pandas_ta
-def dfFormatoPandasTa(df):
+# Time series model
+T = 3                           # number of periods of time series
+
+# Dataset labeling
+h = 3                           # forecast horizon
+
+# Technical indicators
+fast_p = 50                     # Cross mean fast period
+slow_p = 200                    # Cross mean slow period
+bb_per = 100                    # Bollinger bands period
+macd_fast_p = 12                # MACD fast period
+macd_slow_p = 26                # MACD low period
+macd_sign_p = 9                 # MACD signal period
+rsi_per = 14                    # RSI period
+rsi_ulv = 70                    # RSI upper limit value
+rsi_llv = 30                    # RSI lower limit value
+dc_llen = 20                    # Donchian Channel lower length
+dc_ulen = 20                    # Donchian Channel upper length
+kc_len = 20                     # Kelter Channel lenght
+adx_len = 14                    # ADX length
+adx_ul = 25                     # ADX upper limit
+aroon_per = 14                  # Aroon period
+aroon_sl = 70                   # Aroon strenght limit
+aroon_wl = 50                   # Aroon weakness limit
+mfi_per = 14                    # Money Flow Index period
+mfi_ul = 80                     # Money Flow Index upper limit
+mfi_ll = 20                     # Money Flow Index lower limit
+
+# WiSARD
+addressSize = 4                 # number of bits for RAMs adressing
+bleachingActivated= True        # bleaching mechanism
+ignoreZero  = False             # RAMs ignore adress 0
+completeAddressing = True       # when M is not divided by n_i
+verbose = False                 # print status messages
+returnActivationDegree = False  # print similarity of each y
+returnConfidence = False        # print confidence of each y
+returnClassesDegrees = False    # print confidente of each y per classes
+
+
+# ************************** 1. AUXILIARY FUNCTIONS **************************
+
+# ---------------------- Dataset Construction ----------------------
+
+# Format the dataframe according to pandas_ta library
+def pandasTaFormat(df, adj_price):
     df.index.rename('date', inplace=True)
-    df.rename(
-    columns={'Abertura': 'open',
-             'Máxima': 'high',
-             'Mínima' : 'low',
-             'Fechamento': 'close',
-             'Volume Financeiro': 'volume'},
-    inplace=True)
-
-# ---------------------------------------------------------------------------
-# Funções de indicadores
-
-# Indicador diamante"
-# Entradas:
-#   c: preço de fechamento
-#   smas: média móvel aritmética de curta duração
-#   smal: média móvel artimética de longa duração
-def estrategiaDiamante(c, smas, smal):   
-    if smas<smal:
-        if c < smas:
-            reg = 5 # baixa
-        elif (c>=smas) and (c<smal):
-            reg = 0 # recuperação
-        elif c >=smal:
-            reg = 1 # acumulação
-        else:
-            reg = np.NaN # erro
+    if adj_price:
+        df.rename(
+            columns={'Abertura': 'open',
+                     'Máxima': 'high',
+                     'Mínima' : 'low',
+                     'Fechamento': 'close',
+                     'Volume Financeiro': 'volume'},
+            inplace=True)
+        df.drop(['Fech. Sem div'], axis=1, inplace=True)
     else:
-        if c >= smas:
-            reg = 2 # alta
-        elif (c>=smal) and (c<smas):
-            reg = 3 # aviso
-        elif c < smal:
-            reg = 4 # distribuição
-        else:
-            reg = np.NaN # erro
-    return reg
+        df.rename(
+            columns={'Abertura': 'open',
+                     'Máxima': 'high',
+                     'Mínima' : 'low',
+                     'Fech. Sem div': 'close',
+                     'Volume Financeiro': 'volume'},
+            inplace=True)
+        df.drop(['Fechamento'], axis=1, inplace=True)
 
-# Volume de negociações crescente
-def volumeCrescente(s_vol):
+# Construct a datframe with the indicators signals
+def signalsConstructor(df):
+    
+    dfI = pd.DataFrame(index=df.index)
+    
+    # Increasing / decreasing volume
+    s_vol = df['volume']
+    dfI['vol_cres'] = increasingVol(s_vol)
+    dfI['vol_decres'] = decreasingVol(s_vol)
+    
+    # Upward / downward trend
+    dfI['trend_upw']  = trendUpw(df['close'])
+    dfI['trend_dow'] = trendDow(df['close'])
+    
+    # Moving average indicators
+    dfI['ma_buy'], dfI['ma_sell'], dfI['ma_upw'] = movingAverage(df, fast_p, 
+                                                                 slow_p)
+    
+    # Bollinger bands
+    dfI['bb_ll'], dfI['bb_ul'] = bollingerBands(df, bb_per)
+    
+    # MACD 
+    dfI['macd_buy'], dfI['macd_sell'], dfI['macd_upw'] = macd(df, 
+                                                              macd_fast_p, 
+                                                              macd_slow_p, 
+                                                              macd_sign_p)
+    # RSI
+    dfI['rsi_ll'], dfI['rsi_ul'] = rsi(df, rsi_per, rsi_llv, rsi_ulv)
+    
+    # Donchian Channel
+    dfI['dc_ll'] , dfI['dc_ul'] = donchianChannel(df, dc_llen, dc_ulen)
+    
+    # Keltner Channel
+    dfI['kc_ll'] , dfI['kc_ul'] = keltnerChannel(df, kc_len)
+    
+    # ADX (Average Directional Movement Index)
+    adx_force, adx_buy, adx_sell, adx_upw = adx(df, adx_len, adx_ul)
+    dfI['adx_force'] = adx_force
+    dfI['adx_buy'] =  adx_buy 
+    dfI['adx_sell'] = adx_sell
+    dfI['adx_upw'] = adx_upw
+
+    # Aroon
+    aroon_usl, aroon_dsl, aroon_uwl, aroon_dsl = aroon(df, aroon_per, 
+                                                       aroon_sl, aroon_wl)
+    dfI['aroon_usl'] = aroon_usl
+    dfI['aroon_dsl'] = aroon_dsl
+    dfI['aroon_uwl'] = aroon_uwl
+    dfI['aroon_dwl'] = aroon_dsl
+    
+    # Money flow Index
+    dfI['mfi_buy'], dfI['mfi_sell'] = mfi(df, mfi_per, mfi_ll, mfi_ul)
+    
+    return dfI
+
+# s_close: Pandas Series with close prices 
+def getBinaryTrend(s_close, h):
+    c = s_close.tolist()
+    Y = []
+    
+    # Binary trend classification
+        # 0: downward trend
+        # 1: upward trend 
+    for k, val in enumerate(c):
+        if k<len(c)-h:
+            if c[k+h] > val:
+                y = 1
+            else:
+                y = 0
+            Y.append(y)
+        else:
+            Y.append(np.nan)
+    return Y
+
+# get the input matrix with lags
+# T: number of lag periods
+# x(t) = x(t) + x(t-1) + x(t-2) + .. +x(t-T) 
+def timeSeriesModel(X1,T):
+    X2 = []
+    for idx, val in enumerate(X1):
+        if idx >= T:
+            x = []
+            for t in range(T):
+                x.extend(X1[idx-t])
+            X2.append(x)
+        else:
+            X2.append(np.nan)
+    return X2
+
+# ---------------------- Technical indicators signals ----------------------
+
+# Increasing financial volume
+def increasingVol(s_vol):
     vol = s_vol.to_numpy()
     vol_cres = []
     for k, val in enumerate(vol):
@@ -83,8 +200,8 @@ def volumeCrescente(s_vol):
             vol_cres.append(np.nan)
     return pd.Series(vol_cres, s_vol.index)
 
-# Volume de negociações decrescente
-def volumeDecrescente(s_vol):
+# Decreasing financial volume
+def decreasingVol(s_vol):
     vol = s_vol.to_numpy()
     vol_decres = []
     for k, val in enumerate(vol):
@@ -97,8 +214,8 @@ def volumeDecrescente(s_vol):
             vol_decres.append(np.nan)
     return pd.Series(vol_decres, s_vol.index)
 
-# Tendência de alta com base no preço de fechamento
-def tendenciaAlta(s_close):
+# Upward trending based on close price 
+def trendUpw(s_close):
     close = s_close.to_numpy()
     tend = []
     for k, val in enumerate(close):
@@ -111,8 +228,8 @@ def tendenciaAlta(s_close):
             tend.append(np.nan)
     return pd.Series(tend, s_close.index)
 
-# Tendência de baixa com base no preço de fechamento
-def tendenciaBaixa(s_close):
+# Downward trending based on close price 
+def trendDow(s_close):
     close = s_close.to_numpy()
     tend = []
     for k, val in enumerate(close):
@@ -125,345 +242,262 @@ def tendenciaBaixa(s_close):
             tend.append(np.nan)
     return pd.Series(tend, s_close.index)
 
-
-# Cruzamento de médias indicando compra
-def xMediasCompra(smas, smal):
-    return 0
-
-# Cruzamento de médias indicando venda
-def xMediasVenda(smas, smal):
-    return 0
-
-# Indicador de tendência de alta por médias móveis
-def tendenciaMediaAlta(smas, smal):
-    return 0
-
-# Peço acima da banda de Bollinger superior
-def bollingerSup(c):
-    return 0
-
-# preço abaixo da banda de Bollinger inferior
-def bollingerInf(c):
-    return 0
-
-def rsiSobrecompra(c):
-    return 0
-
-def rsiSobrevenda(c):
-    return 0
+# Moving averages cross signals
+def movingAverage(df, fast_p, slow_p):
+    smas = df.ta.sma(length=fast_p)
+    smal = df.ta.sma(length=slow_p)
     
-# Canal Donchian
-def donchian(c):
-    return 0
+    ma_buy = ta.cross(smas, smal, above=True) 
+    ma_sell = ta.cross(smas, smal, above=False) 
+    ma_upw = ta.above(smas, smal)
+    
+    ma_buy.iloc[:fast_p] = np.nan
+    ma_sell.iloc[:fast_p] = np.nan
+    ma_upw.iloc[:fast_p] = np.nan
+    
+    return ma_buy, ma_sell, ma_upw
 
-# Canal Keltner
+def bollingerBands(df, bb_per):
+    df_bb = df.ta.bbands(length=bb_per) 
+    bol_low = df_bb.iloc[:,0]
+    bol_upp = df_bb.iloc[:,2]
+    
+    bb_ll = ta.below(df.close, bol_low)
+    bb_ul = ta.above(df.close, bol_upp)
+    
+    bb_ll.iloc[:bb_per] = np.nan
+    bb_ul.iloc[:bb_per] = np.nan
+    
+    return bb_ll, bb_ul
 
-# Movimento direcional
+def macd(df, macd_fast_p, macd_slow_p, macd_sign_p):
+    df_macd = df.ta.macd(fast=macd_fast_p, slow=macd_slow_p, 
+                      signal=macd_sign_p)
+    macd_macd = df_macd.iloc[:,0]
+    macd_sign = df_macd.iloc[:,2]
+    
+    macd_buy = ta.cross(macd_sign, macd_macd, above=True)
+    macd_sell = ta.cross(macd_sign, macd_macd, above=False)
+    macd_upw = ta.above(macd_sign, macd_macd)
+    
+    macd_buy.iloc[:macd_slow_p] = np.nan
+    macd_sell.iloc[:macd_slow_p] = np.nan
+    macd_upw.iloc[:macd_slow_p] = np.nan
+    
+    return macd_buy, macd_sell, macd_upw
 
-# Aaron
+def rsi(df, rsi_per, rsi_llv, rsi_ulv):
+    s_rsi = df.ta.rsi(length=rsi_per)
+    s_rsi.iloc[:rsi_per] = np.nan # ta includes first values
+   
+    rsi_ll = ta.below_value(s_rsi, value=rsi_llv)
+    rsi_ul = ta.above_value(s_rsi, value=rsi_ulv)
+   
+    rsi_ll.iloc[:rsi_per] = np.nan
+    rsi_ul.iloc[:rsi_per] = np.nan
+    
+    return rsi_ll, rsi_ul
 
-# *****************************  PARÂMETROS  ********************************
-# Número de experimentos
-N = 10
+def donchianChannel(df, dc_llen, dc_ulen):
+    df_dc = ta.donchian(df.close, uper_lenght=dc_ulen, lower_length=dc_llen)
+    dc_low = df_dc.iloc[:,0]
+    dc_upp = df_dc.iloc[:,2]
+    
+    dc_ul = ta.above(df.close, dc_upp)
+    dc_ll = ta.below(df.close, dc_low)
+    
+    dc_ul.iloc[:max([dc_llen, dc_ulen])] = np.nan
+    dc_ll.iloc[:max([dc_llen, dc_ulen])] = np.nan
+    
+    return dc_ll, dc_ul
+        
+def keltnerChannel(df, kc_len):
+    df_kc = df.ta.kc(length=kc_len)
+    kc_low = df_kc.iloc[:,0]
+    kc_upp = df_kc.iloc[:,2]
+    
+    kc_ul = ta.above(df.close, kc_upp)
+    kc_ll = ta.below(df.close, kc_low)
+    
+    kc_ul.iloc[:kc_len] = np.nan
+    kc_ll.iloc[:kc_len] = np.nan
+    
+    return kc_ll, kc_ul 
 
-# Estratégia de treinamento
-#   False: treinamento em batelada
-#   True: Treinamento "On-Line"
-onlineTraining = True   
+def adx(df, adx_len, adx_ul):
+    df_adx = df.ta.adx(length=adx_len)
+    adx, dmp, dmm = df_adx.iloc[:,0], df_adx.iloc[:,1], df_adx.iloc[:,2]
+    
+    adx_force = ta.above_value(adx,adx_ul)
+    adx_buy = ta.cross(dmm, dmp, above=True)
+    adx_sell = ta.cross(dmm, dmp, above=False)
+    adx_upw = ta.above(dmp, dmm)
+    
+    adx_force.iloc[:adx_len] = np.nan
+    adx_buy.iloc[:adx_len] = np.nan
+    adx_sell.iloc[:adx_len] = np.nan
+    adx_upw.iloc[:adx_len] = np.nan
+    
+    return adx_force, adx_buy, adx_sell, adx_upw
 
-# Base de dados
-test_size = 0.3             # tamanho do conjunto de testes (split)
-dataInicial = '2009-02-02'  # primeira data desejada com dados completos
-dataFinal = '2015-06-30'
+def aroon(df, aroon_per, aroon_sl, aroon_wl):
+    df_aroon = df.ta.aroon(length=aroon_per)
+    aroon_u, aroon_d = df_aroon.iloc[:,0], df_aroon.iloc[:,1]
+    
+    aroon_usl = ta.above_value(aroon_u, aroon_sl) # strenght in aroon up
+    aroon_dsl = ta.above_value(aroon_d, aroon_sl) # strenght in aroon down
+    aroon_uwl = ta.below_value(aroon_u, aroon_wl) # weakness in aroon up
+    aroon_dwl = ta.below_value(aroon_d, aroon_wl) # weakness in aroon down
+    
+    aroon_usl.iloc[:aroon_per] = np.nan
+    aroon_dsl.iloc[:aroon_per] = np.nan
+    aroon_uwl.iloc[:aroon_per] = np.nan
+    aroon_dwl.iloc[:aroon_per] = np.nan
+    
+    return aroon_usl, aroon_dsl, aroon_uwl, aroon_dwl
+  
+def mfi(df, mfi_per, mfi_ll, mfi_ul):
+    mfi = df.ta.mfi(length=mfi_per)
+    mfi_buy = ta.above_value(mfi, mfi_ul)
+    mfi_sell = ta.below_value(mfi, mfi_ll)    
+    mfi_buy.iloc[:mfi_per] = np.nan
+    mfi_sell.iloc[:mfi_per] = np.nan
+    return mfi_buy, mfi_sell
+    
+# ************************ 2. DATASET PRE-PROCESSING ************************
 
-# Paramétros das etrat
-p_sm = 10            # número de períodos da média curta
-p_lm = 20           # número de períodos da média longa
-n_classes = 6        # número de classes da esratégia diamante
+# DATAFRAMES:
+# df0: original dataset with ohlcv (open, high, low, close, volume) data 
+# dfI: dataframe with the techincal indicators signals
 
-# Retina
-grau_serie = 5       # Número de periodos passados
-n_per_ad = p_lm-1+grau_serie
-
-# Parâmetros da WiSARD
-addressSize = 5                 # número de bits de enderaçamento das RAMs
-bleachingActivated= True        # desempate
-ignoreZero  = False             # RAMs ignoram o endereço 0
-completeAddressing = True       # quando M (núm. bits) não é divisível por n_i
-verbose = False                 # mensanges durante a execução
-returnActivationDegree = False  # retornq o grau de similariedade de cada y
-returnConfidence = False        # retorna o grau de confiança de cada y
-returnClassesDegrees = False    # confiança de cada y em relação a cada classe
-
-
-# *************************** 1. PRÉ-PROCESSAMENTO ***************************
-
-#
-# 1.1 Importação e tratamento da base de dados
-#
+# Dataset load
 df0 = pd.read_csv('datasets/BBDC4_1994-07-04_2020-06-26_Profit.csv',
                   index_col=0, dayfirst=True, parse_dates=True)
-# Ordena por datas
+
+# Order by date
 df0.sort_index(inplace=True)
 
-# Filtra o período desejado de simulação, levando-se em consideração o 
-# período histórico necessário para o cálculo dos dados
-delta = datetime.timedelta(days=+10)
-data_i = datetime.date.fromisoformat(dataInicial)+delta
-df_temp_i = df0[dataInicial:data_i.isoformat()]
-idx_i = df_temp_i.iloc[0].name
-pos_i = df0.index.get_loc(idx_i)-n_per_ad
-data_i2 = df0.iloc[pos_i].name
-df0 = df0[data_i2:dataFinal].copy()
+# Desired period
+df0 = df0.loc[date_initial:date_last]
+
+# Format the dataset according to pandas_ta library
+pandasTaFormat(df0 ,adj_price)
+
+# Construct the indicator dataset formed by tehcnical indicators singals
+dfI = signalsConstructor(df0)
+
+# ------------------------------- Labeling ---------------------------------
+# Compute the binary trend based on horizon 'h' (days after)
+# 0: downward (sell)
+# 1: upward (buy)
+Y = getBinaryTrend(df0.close, h)
+
+# Remove 'nan' lines of dfI and Y  and joint them in new dataset (D1)
+D1 = dfI.copy()
+D1['Y']=Y
+D1 = D1.dropna().astype(int)
+
+# ------------------------- Time series model ------------------------------
+
+# Create time-series model with T lag periods
+X1 = D1.iloc[:,0:len(D1.columns)-1].values.tolist()
+if T>1:
+    X = timeSeriesModel(X1, T)
+else:
+    X = X1
+
+# Remove 'nan' from data and create a new dataset with X and Y
+Y = D1.iloc[:,len(D1.columns)-1].tolist()
+d = {'X': X, 'Y': Y}
+D = pd.DataFrame(data=d, index=D1.index).dropna()
 
 
-#
-# 1.2 Aplicação dos indicadores técnicos
-#
+# -------------------- Dataset splitting -------------------------
 
-# 1.2.1 Rastreadores de tendência
-
-# Formata o dataframe no formato da biblioteca pandas_ta
-dfFormatoPandasTa(df0)
-df1 = pd.DataFrame(index=df0.index)
-
-# Médias móveis
-smas = df0.ta.sma(length=p_sm)
-df0['smas']=smas
-smal = df0.ta.sma(length=p_lm)
-df0['smal']=smal
-mm_buy = ta.cross(smas, smal, above=True) 
-mm_sell = ta.cross(smas, smal, above=False) 
-mm_alta = ta.above(smas, smal)
-
-mm_buy.iloc[:p_lm] = np.nan
-mm_sell.iloc[:p_lm] = np.nan
-mm_alta.iloc[:p_lm] = np.nan
-
-df1['mm_buy'] = mm_buy
-df1['mm_sell'] = mm_sell
-df1['mm_alta'] = mm_alta
-
-# Bandas de Bollinger
-bb_per = 20 # period
-df_bb = df0.ta.bbands(length=bb_per) 
-df0['bol_low'] = df_bb.iloc[:,0]
-df0['bol_upp'] = df_bb.iloc[:,2]
-bb_ul = ta.above(df0.close, df0.bol_upp)
-bb_ll = ta.below(df0.close, df0.bol_low)
-bb_ll.iloc[:bb_per] = np.nan
-bb_ul.iloc[:bb_per] = np.nan
-df1['bb_ul'] = bb_ul
-df1['bb_ll'] = bb_ll
-
-# MACD
-macd_fast_per = 12
-macd_slow_per = 26
-macd_sign_per = 9
-df_macd = df0.ta.macd(fast=macd_fast_per, slow=macd_slow_per, 
-                  signal=macd_sign_per)
-df0['macd_macd'] = df_macd.iloc[:,0]
-df0['macd_hist'] = df_macd.iloc[:,1]
-df0['macd_sign'] = df_macd.iloc[:,2]
-
-macd_buy = ta.cross(df0['macd_sign'], df0['macd_macd'], above=True)
-macd_sell = ta.cross(df0['macd_sign'], df0['macd_macd'], above=False)
-macd_alta = mm_alta = ta.above(df0.macd_sign, df0.macd_macd)
-
-macd_buy.iloc[:macd_slow_per] = np.nan
-macd_sell.iloc[:macd_slow_per] = np.nan
-macd_alta.iloc[:macd_slow_per] = np.nan
- 
-df1['macd_buy'] = macd_buy
-df1['macd_sell'] = macd_sell
-df1['macd_alta'] = macd_alta
-
-# RSI
-rsi_per = 14 # period
-rsi_ulv = 70 # upper limit value
-rsi_llv = 30 # lower limit value
-
-s_rsi = df0.ta.rsi(length=rsi_per)
-s_rsi.iloc[:rsi_per] = np.nan # ta includes first values
-df0['rsi'] = s_rsi
-
-rsi_ul = ta.above_value(s_rsi, value=rsi_ulv)
-df1['bb_ul'] = bb_ul
-rsi_ll = ta.below_value(s_rsi, value=rsi_llv)
-rsi_ll.iloc[:rsi_per] = np.nan
-rsi_ul.iloc[:rsi_per] = np.nan
-df1['rsi_ul'] = rsi_ul
-df1['rsi_ll'] = rsi_ll
-
-# Volume crescente / decrescente
-s_vol = df0['volume']
-vol_cres = volumeCrescente(s_vol)
-vol_decres = volumeDecrescente(s_vol)
-df1['vol_cres'] = vol_cres
-df1['vol_decres'] = vol_decres
-
-# tendência de alta / baixa
-tendAlta = tendenciaAlta(df0['close'])
-tendBaixa = tendenciaBaixa(df0['close'])
-df1['tend_alta'] = tendAlta
-df1['tend_baixa'] = tendBaixa
-
-
-## Volatilit Bands
-
-# Donchian Channel
-dc_llen = 20
-dc_ulen = 20
-df_dc = ta.donchian(df0.close, uper_lenght=dc_ulen, lower_length=dc_llen)
-dc_low = df_dc.iloc[:,0]
-dc_upp = df_dc.iloc[:,2]
-dc_ul = ta.above(df0.close, dc_upp)
-dc_ll = ta.below(df0.close, dc_low)
-
-dc_ul.iloc[:max([dc_llen, dc_ulen])] = np.nan
-dc_ll.iloc[:max([dc_llen, dc_ulen])] = np.nan
-
-df1['dc_ul'] = dc_ul
-df1['dc_ll'] = dc_ll
-    
-# Keltner Channel
-kc_len = 20
-df_kc = ta.kc(df0.high, df0.low, df0.close, kc_len)
-kc_low = df_kc.iloc[:,0]
-kc_upp = df_kc.iloc[:,2]
-kc_ul = ta.above(df0.close, kc_upp)
-kc_ll = ta.below(df0.close, kc_low)
-
-kc_ul.iloc[:kc_len] = np.nan
-kc_ll.iloc[:kc_len] = np.nan
-
-df1['kc_ul'] = kc_ul
-df1['kc_ll'] = kc_ll
-
-## Trend indicators
-
-# ADX (Average Directional Movement Index)
-adx_len = 14
-adx_ul = 25
-df_adx = df0.ta.adx(length=adx_len)
-adx, dmp, dmm = df_adx.iloc[:,0], df_adx.iloc[:,1], df_adx.iloc[:,2]
-adx_force = ta.above_value(adx,adx_ul)
-df1['adx_force'] = adx_force
-adx_buy = ta.cross(dmm, dmp, above=True)
-adx_sell = ta.cross(dmm, dmp, above=False)
-adx_upw = ta.above(dmp, dmm)
-
-adx_buy.iloc[:,adx_len] = np.nan
-adx_sell.iloc[:,adx_len] = np.nan
-adx_upw.iloc[:,adx_len] = np.nan
-
-df1['adx_buy'] =  adx_buy 
-df1['adx_sell'] = adx_sell
-df1['adx_upw'] = adx_upw
-
-# Aroon
-aroon_per = 14 # aroon period
-aroon_sl = 70 # strenght limit
-aroon_wl = 50 # weakness limit
-df_aroon = ta.aroon(df0.high, df0.low, aroon_per)
-aroon_u, aroon_d = df_aroon.iloc[:,0], df_aroon.iloc[:,1]
-
-aroon_usl = ta.above_value(aroon_u, aroon_sl) # strenght in aroon up
-aroon_dsl = ta.above_value(aroon_d, aroon_sl) # strenght in aroon down
-aroon_uwl = ta.below_value(aroon_u, aroon_wl) # weakness in aroon up
-aroon_dwl = ta.below_value(aroon_d, aroon_wl) # weakness in aroon down
-
-aroon_usl.iloc[:aroon_per] = np.nan
-aroon_dsl.iloc[:aroon_per] = np.nan
-aroon_uwl.iloc[:aroon_per] = np.nan
-aroon_dwl.iloc[:aroon_per] = np.nan
-
-df1['aroon_usl'] = aroon_usl
-df1['aroon_dsl'] = aroon_dsl
-df1['aroon_uwl'] = aroon_uwl
-df1['aroon_dwl'] = aroon_dsl
-
-
-## Volume
-
-# Money Flow Index
-mfi_per = 14
-mfi_ul = 80
-mfi_ll = 20
-mfi = df0.ta.mfi(length=mfi_per)
-
-
-mfi_buy = ta.above_value(mfi, mfi_ul)
-mfi_sell = ta.below_value(mfi, mfi_ll)
-
-df1['mfi_buy'] = mfi_buy
-df1['mfi_sell'] = mfi_sell
-
-# Geração dos rótulos
-f_per = 5 # forecasting period
-r_min = 0.03 # minimum return
-c = df0.close.tolist()
-Y = []
-for k, val in enumerate(c):
-    if k<len(c)-f_per:
-        if c[k+f_per]/val -1 >= r_min:
-            y = 1
-        elif c[k+f_per]/val-1 <= -r_min:
-            y = -1
-        else:
-            y = 0
-        Y.append(y)
-    else:
-        Y.append(np.nan)
-        
-    
-# Adiciona a nova coluna ao dataframe
-df0['y'] = y
-y = y[n_per_ad-grau_serie:]
-
-
-'''
-#
-# 1.3 Construção da retina e do novo data-set com entradas binarizadas
-#
-# Retina formada pelos estados dos 5 últimos dias,
-# sendo cada dia represetando por uma lista de 6 bits
-# região 1 = [1, 0, 0, 0, 0, 0]
-# região 2 = [0, 1, 0, 0, 0, 0]
-# Xn = [região n-1 | região n-2 | ... | região n-5]
-
-Reg = [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 0, 1]]
-#Reg =  np.identity(n_classes, dtype=int).tolist()
-
-# Gera o conjunto de dados de entrada em formato de listas
-X = []
-for idx, val in enumerate(y[grau_serie:]):
-    x =[]
-    for k in range(grau_serie):
-        x.extend(Reg[y[idx-k-1]])
-    X.append(x)
-
-# Cria um novo dataset iniciando a partir da primeira linha com dado
-# disponíel para a média longa
-df = df0.iloc[n_per_ad:].copy()
-df['X']=X
-
-X = df.X.tolist()
-Y = [round(y) for y in df.y.tolist()]
-
-#
-# 1.4 Separação dos conjuntos de treinamento e teste
-#
-X_tr, X_te, Y_tr1, Y_te1 = train_test_split(X, Y,test_size = test_size, 
-                                         shuffle = False)
+# Split dataset for training and test
+X = D.X.values.tolist()
+Y = D.Y.values.tolist()
+X_tr, X_te, Y_tr1, Y_te1 = train_test_split(X, Y, test_size = test_size,                            
+                                            shuffle = False)
 idx_tr = len(X_tr)
-D_tr = df.iloc[:idx_tr].copy()
-D_te = df.iloc[idx_tr:].copy()
+D_tr = D.iloc[:idx_tr].copy()
+D_te = D.iloc[idx_tr:].copy()
 
-# transoforma a saída em lista de strings (formato wisardpkg)
+# maps 'Y to string (wisardpkg format)
 Y_tr = list(map(str,Y_tr1))
 Y_te = list(map(str,Y_te1))
-'''
 
 
+# ************************** 3. WISARD MODEL **************************
 
+Acc = np.array([])  # accuracy matrix
+T_tr = np.array([]) # train time matrix
+T_te = np.array([]) # classification time matrix
+
+for n in range(N): 
+    
+    # 2.1 Model initialiation
+    wsd = wp.Wisard(addressSize,
+                    bleachingActivated = bleachingActivated,
+                    ignoreZero = ignoreZero,
+                    completeAddressing = completeAddressing,
+                    verbose = verbose,
+                    returnActivationDegree = returnActivationDegree,
+                    returnConfidence = returnConfidence,
+                    returnClassesDegrees = returnClassesDegrees)
+    
+    # 2.2 Batch training
+    startTime = time.time()
+    wsd.train(X_tr,Y_tr)
+    endTime = time.time()
+    T_tr_n = endTime-startTime
+    T_tr = np.append(T_tr,T_tr_n)
+
+    G = [] # lista de saídas preditas
+    startTime = time.time()
+    
+    # 2.3 Classificação com ou sem terinamento on-line
+    if onlineTraining:
+        # Online training and classification
+        for k in range(len(X_te)):
+            x = X_te[k]
+            g = wsd.classify([x])
+            G.append(g[0])
+            wsd.train([x],[Y_te[k]])
+    else:
+        # Batch classificaiton
+        G = wsd.classify(X_te)
+    
+    endTime = time.time()
+    T_te_n = endTime-startTime
+    T_te = np.append(T_te,T_te_n)
+
+    # ------------------------------ Evaluation  -----------------------------
+
+    # Map string list to int
+    G = list(map(int, G))
+    Y = list(map(int, Y_te))
+    
+    # Accuracy of experiment n
+    Acc_n = accuracy_score(Y,G)
+    Acc = np.append(Acc, Acc_n)
+
+
+# ************************** 4. RESULTS **************************
+
+print("\nMean time to train: {0:4.2f}ms".format(T_tr.mean()*1000))
+print("Mean time to classify: {0:4.2f}ms".format(T_te.mean()*1000))
+
+Acc_mean = Acc.mean()
+Acc_std = Acc.std()
+print("\nMean accuracy: {0:1.3f} \u00B1 {1:1.3f}".format(Acc.mean(), 
+                                                         Acc.std()))
+
+labels = [0, 1, 2, 3, 4, 5]
+C = confusion_matrix(Y,G)
+print("\nConfusion matrix (last experiment):")
+print("\t Liness: y")
+print("\tColumns: g")
+with np.printoptions(precision=2):
+    C1 = C.astype(np.float).sum(axis=1)
+    print((C.T/C1).T)
