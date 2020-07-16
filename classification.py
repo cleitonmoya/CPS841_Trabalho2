@@ -405,7 +405,10 @@ def bhReturn(df0, D):
     price_i = df0.close[date_i]
     price_f = df0.close[date_f]
     R = price_f/price_i-1
-    return R
+    idx = [date_i, date_f]
+    d = [0, 100*R]
+    s_r = pd.Series(d,idx)
+    return R, s_r
 
 
 # Politic: Buy if g=1, hold until g=0
@@ -601,16 +604,19 @@ with np.printoptions(precision=2):
 print("\nPercentage returns:")
 
 # Buy & Hold return
-R_bh_te = bhReturn(df0,D_te)
-print("\tBuy & Hold: {0:2.1f}%".format(R_bh_te*100))
+R_bh_te, s_bh_te = bhReturn(df0,D_te)
+print("\tBuy & Hold: {0:2.1f}%".format(R_bh_te))
 
 # Wisard return
 #   buy if g=1, hold until g=0
 #   op_sig: series with operation signals
 R_wsd_te, df_R_te = wsdReturn(df0,D_te,G_te_int)
 n_te = df_R_te.size
+date_i_te = D_te.index[0] # initial testing date
+date_f_te = D_te.last_valid_index() # final testing date
 print("\tWiSARD: {0:2.1f}%".format(R_wsd_te*100))
-print("\t\tNumber of operations:",n_te)
+print("\t\tPeriod:",date_i_te, "to", date_f_te)
+print("\t\tNumber of trades:",n_te)
 
 
 if validate:
@@ -635,23 +641,24 @@ if validate:
     print("\nPercentage returns:")
     
     # Buy & Hold return
-    R_bh_vl = bhReturn(df0,D_vl)
-    print("\tBuy & Hold: {0:2.1f}%".format(R_bh_vl*100))
+    R_bh_vl, s_bh_vl = bhReturn(df0,D_vl)
+    print("\tBuy & Hold: {0:2.1f}%".format(R_bh_vl))
     
     # Wisard return
     #   buy if g=1, hold until g=0
     #   op_sig: series with operation signals
     R_wsd_vl, df_R_vl = wsdReturn(df0,D_vl,G_vl_int)
     n_vl = df_R_vl.size
+    date_i_vl = D_vl.index[0] # initial validating date
+    date_f_vl = D_vl.last_valid_index() # final validating date
     print("\tWiSARD: {0:2.1f}%".format(R_wsd_vl*100))
+    print("\t\tPeriod:",date_i_vl, "to", date_f_vl)
     print("\t\tNumber of operations:",n_vl)
 
 # ------------------------------ Plots  -----------------------------
 
 date_i_tr = D_tr.index[0] # initial trianing date
-date_i_te = D_te.index[0] # initial testing date 
-date_i_vl = D_vl.index[0] # initial validating date
-date_f_vl = D_vl.last_valid_index() # final validating date
+
 
 # plot close price of training+testing+validating period
 fig,ax=plt.subplots()
@@ -670,9 +677,12 @@ vl_pt = mpatches.Patch(color='gray', alpha=0.1, label="Validation")
 
 # plot test and validating returns
 r_wsd_te_acc_s = (df_R_te['r_acc']-1)*100
+r_wsd_te_acc_s.plot(ax=ax, secondary_y=True, linewidth=1, color='C1')
+s_bh_te.plot(ax=ax, secondary_y=True, linewidth=1, color='C2', style='-')
+
 r_wsd_vl_acc_s = (df_R_vl['r_acc']-1)*100
-r_wsd_te_acc_s.plot(ax=ax, secondary_y=True, linewidth=0.5, color='C1')
-r_wsd_vl_acc_s.plot(ax=ax, secondary_y=True, linewidth=0.5, color='C1')
+r_wsd_vl_acc_s.plot(ax=ax, secondary_y=True, linewidth=1, color='C1')
+s_bh_vl.plot(ax=ax, secondary_y=True, linewidth=1, color='C2', style='-')
 
 ax.right_ax.set_ylabel("Acc return (%)")
 ax.right_ax.yaxis.set_major_formatter(FormatStrFormatter('%2.0f'))
