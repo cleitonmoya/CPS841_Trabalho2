@@ -18,6 +18,8 @@ import time
 import datetime
 import wisardpkg as wp
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix
 
@@ -123,7 +125,7 @@ returnClassesDegrees = False    # confiança de cada y em relação a cada class
 #
 # 1.1 Importação e tratamento da base de dados
 #
-df0 = pd.read_csv('datasets/BBDC4_1994-07-04_2020-06-26_Profit.csv',
+df0 = pd.read_csv('datasets/BBDC4.csv',
                   index_col=0, dayfirst=True, parse_dates=True)
 # Ordena por datas
 df0.sort_index(inplace=True)
@@ -336,6 +338,15 @@ s2p= s1p.loc[s1p.last_valid_index()]
 s3p=pd.Series([s2p],index=[s1p.last_valid_index()])
 sp = sp.append(s3p)
 
+c = ['k', 'b']
+l1 = Line2D([0], [0], color=c[0], lw=1)
+l2 = Line2D([0], [0], color=c[1], lw=1)
+l3 = Line2D([0], [0], color=c[1], lw=2)
+lines = [l1, l2, l3]
+
+labels=['Close','MA(50)', 'MA(100)']
+plt.legend(lines,labels,bbox_to_anchor=[1.005,1.0], loc='upper left')
+
 plt.subplot(2,1,2)
 D_te.close.plot(linewidth=1, color='black')
 D_te.smal.plot(linewidth=2, color='blue')
@@ -350,3 +361,15 @@ for index, value in sp.items():
         plt.axvspan(index, sp.index[pos+1], 
                     alpha=0.5, color=colors[value], lw=0)
     pos = pos+1
+    
+labels = ['Recuperação', 'Acumulação', 'Alta', 'Aviso', 'Distribuição', 'Baixa']
+reg0 = mpatches.Patch(color=colors[0], alpha=0.5, label=labels[0])
+reg1 = mpatches.Patch(color=colors[1], alpha=0.5, label=labels[1])
+reg2 = mpatches.Patch(color=colors[2], alpha=0.5, label=labels[2])
+reg3 = mpatches.Patch(color=colors[3], alpha=0.5, label=labels[3])
+reg4 = mpatches.Patch(color=colors[4], alpha=0.5, label=labels[4])
+reg5 = mpatches.Patch(color=colors[5], alpha=0.5, label=labels[5])
+
+plt.legend(handles=[reg0, reg1, reg2, reg3, reg4, reg5], bbox_to_anchor=[1.005, 1.0], loc='upper left')
+plt.tight_layout()
+    

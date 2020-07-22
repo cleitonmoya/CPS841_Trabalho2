@@ -28,7 +28,6 @@ onlineTraining = True           # online traiing
 test_size = 0.1                 # lenght of est datasize
 date_initial = '2015-01-01'      
 date_last = '2020-01-01'
-adj_price = True                # close price adjusted for dividends
 
 # Technical indicators
 rsi_ulv = 70                    # RSI upper limit value
@@ -60,26 +59,15 @@ returnClassesDegrees = False    # print confidente of each y per classes
 # ---------------------- Dataset Construction ----------------------
 
 # Format the dataframe according to pandas_ta library
-def pandasTaFormat(df, adj_price):
+def pandasTaFormat(df):
     df.index.rename('date', inplace=True)
-    if adj_price:
-        df.rename(
-            columns={'Abertura': 'open',
-                     'Máxima': 'high',
-                     'Mínima' : 'low',
-                     'Fechamento': 'close',
-                     'Volume Financeiro': 'volume'},
-            inplace=True)
-        df.drop(['Fech. Sem div'], axis=1, inplace=True)
-    else:
-        df.rename(
-            columns={'Abertura': 'open',
-                     'Máxima': 'high',
-                     'Mínima' : 'low',
-                     'Fech. Sem div': 'close',
-                     'Volume Financeiro': 'volume'},
-            inplace=True)
-        df.drop(['Fechamento'], axis=1, inplace=True)
+    df.rename(
+        columns={'Abertura': 'open',
+                 'Máxima': 'high',
+                 'Mínima' : 'low',
+                 'Fechamento': 'close',
+                 'Volume Financeiro': 'volume'},
+        inplace=True)
 
 # Construct a datframe with the indicators signals
 def signalsConstructor(df):
@@ -110,6 +98,7 @@ def signalsConstructor(df):
     # RSI
     dfI['rsi_ll'], dfI['rsi_ul'] = rsi(df, rsi_per, rsi_llv, rsi_ulv)
     
+    '''
     # Donchian Channel
     dfI['dc_ll'] , dfI['dc_ul'] = donchianChannel(df, dc_llen, dc_ulen)
     
@@ -133,7 +122,7 @@ def signalsConstructor(df):
     
     # Money flow Index
     dfI['mfi_buy'], dfI['mfi_sell'] = mfi(df, mfi_per, mfi_ll, mfi_ul)
-    
+    '''
     return dfI
 
 # s_close: Pandas Series with close prices 
@@ -357,7 +346,7 @@ def mfi(df, mfi_per, mfi_ll, mfi_ul):
 # dfI: dataframe with the techincal indicators signals
 
 # Dataset load
-df0 = pd.read_csv('datasets/BBDC4_1994-07-04_2020-06-26_Profit.csv',
+df0 = pd.read_csv('datasets/BBDC4.csv',
                   index_col=0, dayfirst=True, parse_dates=True)
 
 # Order by date
@@ -367,18 +356,18 @@ df0.sort_index(inplace=True)
 df0 = df0.loc[date_initial:date_last]
 
 # Format the dataset according to pandas_ta library
-pandasTaFormat(df0 ,adj_price)
+pandasTaFormat(df0)
 
 
 # ------------------------------- Grid Search -------------------------------
 
-addressSizeG = [4, 8, 16, 24]    # number of bits for RAMs adressing 4
+addressSizeG = [4, 8, 16]    # number of bits for RAMs adressing 4
 
 # Time series model
-TG = [1, 3, 5, 15]           # number of periods of time series 4
+TG = [1, 3, 5]           # number of periods of time series 4
 
 # Dataset labeling
-hG = [1, 3, 5, 10]               # forecast horizon 4
+hG = [1, 3, 5]            # forecast horizon 4
 
 # Technical indicators
 fast_pG = [10, 20, 50]        # Cross mean fast period 3
@@ -394,8 +383,10 @@ df_res=pd.DataFrame(columns=['addressSize', 'T', 'h',
                              'rsi_per', 'Acc'
                              ])
 
-estimated_time=(4**3)*(3**9)/100/3600
+print("Number of combinations:", 3**10)
+print("Estimated time:", (3**10)/1000/60, "min")
 
+cont = 0
 for k1 in range(len(addressSizeG)):
     addressSize=addressSizeG[k1]
     for k2 in range(len(TG)):
@@ -416,7 +407,6 @@ for k1 in range(len(addressSizeG)):
                                     macd_sign_p = macd_sign_pG[k9]
                                     for k10 in range(len(rsi_perG)):
                                         rsi_per=rsi_perG [k10] 
-                                        
                                         # ------------------------------- Labeling ---------------------------------
                                         # Compute the binary trend based on horizon 'h' (days after)
                                         # 0: downward (sell)
@@ -482,14 +472,11 @@ for k1 in range(len(addressSizeG)):
                                                             returnClassesDegrees = returnClassesDegrees)
                                             
                                             # 2.2 Batch training
-                                            startTime = time.time()
                                             wsd.train(X_tr,Y_tr)
-                                            endTime = time.time()
-                                            T_tr_n = endTime-startTime
-                                            T_tr = np.append(T_tr,T_tr_n)
-                                        
+                                            
+                                            
                                             G = [] # lista de saídas preditas
-                                            startTime = time.time()
+                                            
                                             
                                             # 2.3 Classificação com ou sem terinamento on-line
                                             if onlineTraining:
@@ -503,10 +490,6 @@ for k1 in range(len(addressSizeG)):
                                                 # Batch classificaiton
                                                 G = wsd.classify(X_te)
                                             
-                                            endTime = time.time()
-                                            T_te_n = endTime-startTime
-                                            T_te = np.append(T_te,T_te_n)
-                                        
                                             # ------------------------------ Evaluation  -----------------------------
                                         
                                             # Map string list to int
@@ -534,5 +517,7 @@ for k1 in range(len(addressSizeG)):
                                              'rsi_per':rsi_per, 
                                              'Acc':Acc_mean}
                                         df_res =df_res.append(d,ignore_index=True)
+                                        cont=cont+1
+                                        if cont%10000 == 0: print("Iteração:", cont)
                                         
 df_res.to_csv('resultadosGrid.csv')
